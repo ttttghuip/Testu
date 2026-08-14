@@ -30,17 +30,39 @@ ssh -T -N \
     tcp@a.pinggy.io 2>&1 | tee /tmp/pinggy.log &
 
 PINGGY_PID=$!
-sleep 8
 
-# ── 3. Print SSH Info ─────────────────────────────────────
+# Wait longer for Pinggy to fully connect
+echo "⏳ Waiting for Pinggy to connect..."
+sleep 15
+
+# ── 3. Print RAW log + parsed info ───────────────────────
 echo ""
 echo "============================================"
-TUNNEL=$(grep -o 'tun[a-z0-9.-]*pinggy\.io:[0-9]*' /tmp/pinggy.log | head -1)
-HOST=$(echo $TUNNEL | cut -d: -f1)
-PORT=$(echo $TUNNEL | cut -d: -f2)
+echo "📄 RAW PINGGY LOG:"
+cat /tmp/pinggy.log
+echo ""
+echo "============================================"
+
+# Try multiple grep patterns to find port
+TUNNEL=$(grep -oE 'tcp://[^[:space:]]+' /tmp/pinggy.log | head -1)
+if [ -z "$TUNNEL" ]; then
+    TUNNEL=$(grep -oE '[a-z0-9]+\.pinggy\.io:[0-9]+' /tmp/pinggy.log | head -1)
+fi
+if [ -z "$TUNNEL" ]; then
+    TUNNEL=$(grep -oE 'tun[^ ]+:[0-9]+' /tmp/pinggy.log | head -1)
+fi
+
 echo "🔗 Connect from Termux:"
-echo "   ssh -p $PORT root@$HOST"
-echo "   Password: toor"
+if [ -n "$TUNNEL" ]; then
+    # Remove tcp:// prefix if present
+    CLEAN=$(echo $TUNNEL | sed 's|tcp://||')
+    HOST=$(echo $CLEAN | cut -d: -f1)
+    PORT=$(echo $CLEAN | cut -d: -f2)
+    echo "   ssh -p $PORT root@$HOST"
+    echo "   Password: toor"
+else
+    echo "   ⚠️ Check RAW LOG above for your tunnel URL!"
+fi
 echo "============================================"
 echo ""
 
@@ -49,14 +71,12 @@ echo ""
 while true; do
     sleep 120
 
-    # Restart SSH if dead
     if ! nc -z localhost 22 2>/dev/null; then
         echo "⚠️ SSH died! Restarting..."
         /usr/sbin/sshd -D &
         sleep 5
     fi
 
-    # Restart Pinggy if dead
     if ! kill -0 $PINGGY_PID 2>/dev/null; then
         echo "⚠️ Pinggy died! Restarting..."
         ssh -T -N \
@@ -68,10 +88,9 @@ while true; do
             -R 0:localhost:22 \
             tcp@a.pinggy.io 2>&1 | tee /tmp/pinggy.log &
         PINGGY_PID=$!
-        sleep 8
-
-        TUNNEL=$(grep -o 'tun[a-z0-9.-]*pinggy\.io:[0-9]*' /tmp/pinggy.log | head -1)
-        echo "🔗 New: ssh -p $(echo $TUNNEL | cut -d: -f2) root@$(echo $TUNNEL | cut -d: -f1)"
+        sleep 15
+        echo "📄 NEW PINGGY LOG:"
+        cat /tmp/pinggy.log
     fi
 
 done
