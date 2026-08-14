@@ -20,7 +20,8 @@ fi
 
 # ── 2. Pinggy TCP Tunnel ──────────────────────────────────
 echo "🌐 Starting Pinggy tunnel..."
-ssh -o StrictHostKeyChecking=no \
+ssh -T -N \
+    -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
     -o ServerAliveInterval=30 \
     -o ServerAliveCountMax=5 \
@@ -58,14 +59,17 @@ while true; do
     # Restart Pinggy if dead
     if ! kill -0 $PINGGY_PID 2>/dev/null; then
         echo "⚠️ Pinggy died! Restarting..."
-        ssh -o StrictHostKeyChecking=no \
+        ssh -T -N \
+            -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
             -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=5 \
             -p 443 \
             -R 0:localhost:22 \
             tcp@a.pinggy.io 2>&1 | tee /tmp/pinggy.log &
         PINGGY_PID=$!
         sleep 8
+
         TUNNEL=$(grep -o 'tun[a-z0-9.-]*pinggy\.io:[0-9]*' /tmp/pinggy.log | head -1)
         echo "🔗 New: ssh -p $(echo $TUNNEL | cut -d: -f2) root@$(echo $TUNNEL | cut -d: -f1)"
     fi
