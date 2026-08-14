@@ -27,41 +27,46 @@ ssh -T -N \
     -o ServerAliveCountMax=5 \
     -p 443 \
     -R 0:localhost:22 \
-    tcp@a.pinggy.io 2>&1 | tee /tmp/pinggy.log &
+    tcp@a.pinggy.io > /tmp/pinggy.log 2>&1 &
 
 PINGGY_PID=$!
 
-# Wait longer for Pinggy to fully connect
-echo "⏳ Waiting for Pinggy to connect..."
-sleep 15
+# Wait for Pinggy URL to appear in log
+echo "⏳ Waiting for Pinggy URL..."
+for i in $(seq 1 20); do
+    sleep 3
+    if grep -q "forwarding\|pinggy.io" /tmp/pinggy.log 2>/dev/null; then
+        echo "✅ Pinggy connected!"
+        break
+    fi
+    echo "  Waiting... $i/20"
+done
 
-# ── 3. Print RAW log + parsed info ───────────────────────
+# ── 3. Print full raw log ─────────────────────────────────
 echo ""
-echo "============================================"
-echo "📄 RAW PINGGY LOG:"
+echo "====== RAW PINGGY LOG ======"
 cat /tmp/pinggy.log
+echo "============================"
+
+# Extract URL — match Pinggy's actual format
+TUNNEL=$(grep -oE '[a-zA-Z0-9._-]+\.a\.pinggy\.io:[0-9]+' /tmp/pinggy.log | head -1)
+if [ -z "$TUNNEL" ]; then
+    TUNNEL=$(grep -oE 'tcp://[^ ]+' /tmp/pinggy.log | head -1 | sed 's|tcp://||')
+fi
+if [ -z "$TUNNEL" ]; then
+    TUNNEL=$(grep -oE '[a-zA-Z0-9-]+\.pinggy\.io:[0-9]+' /tmp/pinggy.log | head -1)
+fi
+
 echo ""
 echo "============================================"
-
-# Try multiple grep patterns to find port
-TUNNEL=$(grep -oE 'tcp://[^[:space:]]+' /tmp/pinggy.log | head -1)
-if [ -z "$TUNNEL" ]; then
-    TUNNEL=$(grep -oE '[a-z0-9]+\.pinggy\.io:[0-9]+' /tmp/pinggy.log | head -1)
-fi
-if [ -z "$TUNNEL" ]; then
-    TUNNEL=$(grep -oE 'tun[^ ]+:[0-9]+' /tmp/pinggy.log | head -1)
-fi
-
-echo "🔗 Connect from Termux:"
 if [ -n "$TUNNEL" ]; then
-    # Remove tcp:// prefix if present
-    CLEAN=$(echo $TUNNEL | sed 's|tcp://||')
-    HOST=$(echo $CLEAN | cut -d: -f1)
-    PORT=$(echo $CLEAN | cut -d: -f2)
+    HOST=$(echo $TUNNEL | cut -d: -f1)
+    PORT=$(echo $TUNNEL | cut -d: -f2)
+    echo "🔗 Connect from Termux:"
     echo "   ssh -p $PORT root@$HOST"
     echo "   Password: toor"
 else
-    echo "   ⚠️ Check RAW LOG above for your tunnel URL!"
+    echo "⚠️ Could not parse URL — check RAW LOG above!"
 fi
 echo "============================================"
 echo ""
@@ -86,9 +91,9 @@ while true; do
             -o ServerAliveCountMax=5 \
             -p 443 \
             -R 0:localhost:22 \
-            tcp@a.pinggy.io 2>&1 | tee /tmp/pinggy.log &
+            tcp@a.pinggy.io > /tmp/pinggy.log 2>&1 &
         PINGGY_PID=$!
-        sleep 15
+        sleep 30
         echo "📄 NEW PINGGY LOG:"
         cat /tmp/pinggy.log
     fi
